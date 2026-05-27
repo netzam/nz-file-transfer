@@ -60,6 +60,8 @@ export default function App() {
 
           <section>
             <h2>Nearby Devices</h2>
+            <p>Connection state: <b>{signal.connected ? 'Connected' : 'Not connected'}</b></p>
+            {store.peers.length === 0 ? <p>No other devices in room yet.</p> : null}
             {store.peers.map((p) => (
               <div key={p.deviceId} style={{ border: '1px solid #334155', padding: 12, borderRadius: 8, marginBottom: 8 }}>
                 <div><b>{p.deviceName}</b></div>

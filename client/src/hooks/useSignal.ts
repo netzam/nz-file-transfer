@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store/appStore';
 
+interface PeerPayload {
+  deviceId: string;
+  deviceName: string;
+  userAgent: string;
+}
+
 const CHUNK_SIZE = 128 * 1024;
 
 export function useSignal() {
@@ -8,6 +14,7 @@ export function useSignal() {
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
   const [connected, setConnected] = useState(false);
+  const selfDeviceIdRef = useRef('');
   const { setState, roomCode, deviceName } = useAppStore();
 
   useEffect(() => {
@@ -24,10 +31,20 @@ export function useSignal() {
 
       ws.onmessage = async (event) => {
         const message = JSON.parse(event.data);
-        if (message.type === 'welcome') setState({ deviceId: message.payload.deviceId });
-        if (message.type === 'room-created') setState({ roomCode: message.payload.roomCode });
+        if (message.type === 'welcome') {
+          selfDeviceIdRef.current = message.payload.deviceId;
+          setState({ deviceId: message.payload.deviceId });
+        }
+        if (message.type === 'room-created') {
+          const createdRoom = message.payload.roomCode;
+          setState({ roomCode: createdRoom });
+          ws.send(JSON.stringify({ type: 'join-room', payload: { roomCode: createdRoom } }));
+        }
         if (message.type === 'room-state') {
-          setState({ peers: message.payload.peers.map((p: any) => ({ ...p, status: 'online' })) });
+          const peers = (message.payload.peers as PeerPayload[])
+            .filter((p) => p.deviceId !== selfDeviceIdRef.current)
+            .map((p) => ({ ...p, status: 'online' as const }));
+          setState({ peers });
         }
         if (message.type === 'signal') await onSignal(message.payload.from, message.payload.data);
       };
@@ -110,7 +127,11 @@ export function useSignal() {
   };
 
   const createRoom = () => wsRef.current?.send(JSON.stringify({ type: 'create-room' }));
-  const joinRoom = (code: string) => wsRef.current?.send(JSON.stringify({ type: 'join-room', payload: { roomCode: code.toUpperCase() } }));
+  const joinRoom = (code: string) => {
+    const normalizedCode = code.trim().toUpperCase();
+    if (!normalizedCode) return;
+    wsRef.current?.send(JSON.stringify({ type: 'join-room', payload: { roomCode: normalizedCode } }));
+  };
 
   return { roomCode, connected, createRoom, joinRoom, connectToPeer, sendFiles };
 }
