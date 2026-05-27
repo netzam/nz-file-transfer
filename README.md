@@ -37,14 +37,32 @@ npm run build
 ```
 
 ## Deploy
-Push to `main` with required GitHub Secrets:
-- `GCP_PROJECT_ID` (same as ai-chatbot: `netzam-wifi`)
-- `GCP_REGION` (same as ai-chatbot: `asia-southeast1`)
-- `GCP_SA_KEY`
-- `GAR_LOCATION` (same as ai-chatbot: `asia-southeast1`)
-- `GAR_REPOSITORY` (same baseline repo family as ai-chatbot)
-- `CLOUD_RUN_SERVICE` (`nz-file-transfer`)
+Yes — Dockerfile-first is the best fit for your case.
 
-Workflow template: `docs/templates/deploy.workflow.yml`
+### Option A (recommended): Cloud Run connected to GitHub repo directly
+Use Cloud Build trigger + this repo's `Dockerfile` (no GitHub Actions needed).
 
-> Note: this environment's current GitHub token cannot commit `.github/workflows/*` without `workflow` scope. After updating token scope, move template to `.github/workflows/deploy.yml`.
+1. In GCP Console: **Cloud Build → Triggers → Create Trigger**
+2. Connect GitHub repo: `netzam/nz-file-transfer`
+3. Event: push to `main`
+4. Build config: `Dockerfile` (or `cloudbuild.yaml`)
+5. Deploy target: Cloud Run service `nz-file-transfer`
+6. Region: `asia-southeast1`, Project: `netzam-wifi`
+
+This gives automatic deploy on every push to `main`, with Cloud Run building from Dockerfile via Cloud Build.
+
+### Option B: CLI source deploy using Dockerfile
+```bash
+gcloud run deploy nz-file-transfer \
+  --source . \
+  --region asia-southeast1 \
+  --project netzam-wifi \
+  --allow-unauthenticated
+```
+
+If `Dockerfile` exists, Cloud Build uses it for the image build.
+
+### Notes
+- Current repo already has a production Dockerfile.
+- Existing `cloudbuild.yaml` is compatible with Docker-based deploy flow.
+- GitHub Actions workflow template remains optional at `docs/templates/deploy.workflow.yml`.
