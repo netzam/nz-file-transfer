@@ -13,10 +13,6 @@ const app = express();
 app.use(helmet());
 app.use(cors());
 
-app.get('/', (_req, res) => {
-  res.json({ service: 'nz-file-transfer-signal', status: 'ok' });
-});
-
 app.get('/health', (_req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
@@ -26,6 +22,10 @@ if (existsSync(publicDir)) {
   app.use(express.static(publicDir));
   app.get('*', (_req, res) => {
     res.sendFile(path.join(publicDir, 'index.html'));
+  });
+} else {
+  app.get('/', (_req, res) => {
+    res.json({ service: 'nz-file-transfer-signal', status: 'ok' });
   });
 }
 
