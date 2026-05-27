@@ -19,3 +19,4 @@ substitutions:
   _REGION: 'asia-southeast1'
   _GAR_LOCATION: 'asia-southeast1'
   _GAR_REPOSITORY: 'nz-apps'
+# Use same GCP baseline as ai-chatbot: project netzam-wifi, region asia-southeast1.

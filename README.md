@@ -38,11 +38,13 @@ npm run build
 
 ## Deploy
 Push to `main` with required GitHub Secrets:
-- `GCP_PROJECT_ID`
-- `GCP_REGION`
+- `GCP_PROJECT_ID` (same as ai-chatbot: `netzam-wifi`)
+- `GCP_REGION` (same as ai-chatbot: `asia-southeast1`)
 - `GCP_SA_KEY`
-- `GAR_LOCATION`
-- `GAR_REPOSITORY`
-- `CLOUD_RUN_SERVICE`
+- `GAR_LOCATION` (same as ai-chatbot: `asia-southeast1`)
+- `GAR_REPOSITORY` (same baseline repo family as ai-chatbot)
+- `CLOUD_RUN_SERVICE` (`nz-file-transfer`)
 
-Workflow: `.github/workflows/deploy.yml`
+Workflow template: `docs/templates/deploy.workflow.yml`
+
+> Note: this environment's current GitHub token cannot commit `.github/workflows/*` without `workflow` scope. After updating token scope, move template to `.github/workflows/deploy.yml`.
