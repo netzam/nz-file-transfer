@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useSignal } from './hooks/useSignal';
 import { defaultDeviceName, getSavedDeviceName, saveDeviceName } from './lib/device';
@@ -11,6 +11,7 @@ export default function App() {
   const [speed, setSpeed] = useState('-');
   const [eta, setEta] = useState('-');
   const [tab, setTab] = useState<'home'|'history'|'settings'>('home');
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
 
   const signal = useSignal();
 
@@ -34,7 +35,14 @@ export default function App() {
       setEta(t);
     });
     store.setState({ transferHistory: [`${new Date().toLocaleString()} Sent ${e.target.files.length} file(s)`, ...store.transferHistory] });
+    e.target.value = '';
   };
+
+  const roleLabel = signal.transferRole === 'sender'
+    ? 'Sender'
+    : signal.transferRole === 'recipient'
+      ? 'Recipient'
+      : 'Not connected';
 
   return (
     <main style={{ maxWidth: 980, margin: '0 auto', padding: 20, color: '#e5e7eb', fontFamily: 'Inter, sans-serif', background: '#0b1220', minHeight: '100vh' }}>
@@ -60,6 +68,17 @@ export default function App() {
 
           <section>
             <h2>Nearby Devices</h2>
+            <p><b>This device:</b> {store.deviceName || 'Unnamed device'} {store.deviceId ? `(${store.deviceId.slice(0, 8)})` : ''}</p>
+            <p><b>Role:</b> {roleLabel}</p>
+            {signal.counterpartyName ? <p><b>Connected with:</b> {signal.counterpartyName}</p> : null}
+            {signal.transferRole !== 'idle' && signal.counterpartyName ? (
+              <p>
+                <b>Transfer path:</b>{' '}
+                {signal.transferRole === 'sender'
+                  ? `${store.deviceName || 'This device'} → ${signal.counterpartyName}`
+                  : `${signal.counterpartyName} → ${store.deviceName || 'This device'}`}
+              </p>
+            ) : null}
             <p>Connection state: <b>{signal.connected ? 'Connected' : 'Not connected'}</b></p>
             {store.peers.length === 0 ? <p>No other devices in room yet.</p> : null}
             {store.peers.map((p) => (
@@ -67,7 +86,7 @@ export default function App() {
                 <div><b>{p.deviceName}</b></div>
                 <div>{p.userAgent}</div>
                 <div>Status: {p.status}</div>
-                <button onClick={() => signal.connectToPeer(p.deviceId)}>Connect</button>
+                <button onClick={() => signal.connectToPeer(p.deviceId)}>Send to this device</button>
               </div>
             ))}
           </section>
@@ -75,6 +94,20 @@ export default function App() {
           <section>
             <h2>Transfer</h2>
             <input type="file" multiple onChange={onFiles} />
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              style={{ display: 'none' }}
+              onChange={onFiles}
+            />
+            <div style={{ marginTop: 10 }}>
+              <button onClick={() => imageInputRef.current?.click()}>Select Photos (iPhone)</button>
+              <p style={{ marginTop: 6, opacity: 0.85 }}>
+                Tip for iPhone: tap Select in the photo picker, choose Select All, then tap Add.
+              </p>
+            </div>
             <p>Progress: {progress.toFixed(1)}%</p>
             <p>Speed: {speed} | ETA: {eta}</p>
           </section>

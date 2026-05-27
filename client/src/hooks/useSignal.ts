@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store/appStore';
 
+type TransferRole = 'idle' | 'sender' | 'recipient';
+
 interface PeerPayload {
   deviceId: string;
   deviceName: string;
@@ -14,6 +16,8 @@ export function useSignal() {
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
   const [connected, setConnected] = useState(false);
+  const [transferRole, setTransferRole] = useState<TransferRole>('idle');
+  const [counterpartyName, setCounterpartyName] = useState('');
   const selfDeviceIdRef = useRef('');
   const { setState, roomCode, deviceName } = useAppStore();
 
@@ -72,6 +76,11 @@ export function useSignal() {
       dcRef.current = event.channel;
       dcRef.current.binaryType = 'arraybuffer';
       dcRef.current.onopen = () => setConnected(true);
+      dcRef.current.onclose = () => {
+        setConnected(false);
+        setTransferRole('idle');
+        setCounterpartyName('');
+      };
     };
 
     pcRef.current = pc;
@@ -79,11 +88,28 @@ export function useSignal() {
   };
 
   const connectToPeer = async (remoteDeviceId: string) => {
+    const latestPeers = useAppStore.getState().peers;
+    const targetPeer = latestPeers.find((peer) => peer.deviceId === remoteDeviceId);
+    setTransferRole('sender');
+    setCounterpartyName(targetPeer?.deviceName ?? remoteDeviceId);
+
     const pc = createPeerConnection(remoteDeviceId);
     const dc = pc.createDataChannel('file-transfer', { ordered: true });
     dc.binaryType = 'arraybuffer';
     dc.onopen = () => setConnected(true);
+    dc.onclose = () => {
+      setConnected(false);
+      setTransferRole('idle');
+      setCounterpartyName('');
+    };
     dcRef.current = dc;
+
+    setState({
+      peers: latestPeers.map((peer) => (
+        peer.deviceId === remoteDeviceId ? { ...peer, status: 'connecting' } : peer
+      )),
+    });
+
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     wsRef.current?.send(JSON.stringify({ type: 'signal', payload: { to: remoteDeviceId, data: { sdp: offer } } }));
@@ -91,6 +117,11 @@ export function useSignal() {
 
   const onSignal = async (from: string, data: any) => {
     if (data.sdp?.type === 'offer') {
+      const latestPeers = useAppStore.getState().peers;
+      const sourcePeer = latestPeers.find((peer) => peer.deviceId === from);
+      setTransferRole('recipient');
+      setCounterpartyName(sourcePeer?.deviceName ?? from);
+
       const pc = createPeerConnection(from);
       await pc.setRemoteDescription(data.sdp);
       const answer = await pc.createAnswer();
@@ -98,6 +129,12 @@ export function useSignal() {
       wsRef.current?.send(JSON.stringify({ type: 'signal', payload: { to: from, data: { sdp: answer } } }));
     } else if (data.sdp?.type === 'answer') {
       await pcRef.current?.setRemoteDescription(data.sdp);
+      const latestPeers = useAppStore.getState().peers;
+      setState({
+        peers: latestPeers.map((peer) => (
+          peer.deviceId === from ? { ...peer, status: 'connected' } : peer
+        )),
+      });
     } else if (data.ice) {
       await pcRef.current?.addIceCandidate(data.ice);
     }
@@ -133,5 +170,5 @@ export function useSignal() {
     wsRef.current?.send(JSON.stringify({ type: 'join-room', payload: { roomCode: normalizedCode } }));
   };
 
-  return { roomCode, connected, createRoom, joinRoom, connectToPeer, sendFiles };
+  return { roomCode, connected, transferRole, counterpartyName, createRoom, joinRoom, connectToPeer, sendFiles };
 }
