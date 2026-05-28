@@ -14,7 +14,8 @@ interface IncomingFileMeta {
   size: number;
 }
 
-const CHUNK_SIZE = 128 * 1024;
+// 16KB chunks are more reliable on iOS Safari/WebKit data channels.
+const CHUNK_SIZE = 16 * 1024;
 
 export function useSignal() {
   const wsRef = useRef<WebSocket | null>(null);
@@ -202,26 +203,49 @@ export function useSignal() {
   };
 
   const sendFiles = async (files: FileList, onProgress: (p: number, speed: string, eta: string) => void) => {
-    if (!dcRef.current || dcRef.current.readyState !== 'open') return;
+    if (!dcRef.current || dcRef.current.readyState !== 'open') {
+      throw new Error('Data channel is not open yet. Please wait for Connected status.');
+    }
+
     const all = Array.from(files);
     for (const file of all) {
+      if (!dcRef.current || dcRef.current.readyState !== 'open') {
+        throw new Error('Connection dropped during transfer.');
+      }
+
       dcRef.current.send(JSON.stringify({ type: 'file-meta', name: file.name, size: file.size }));
       const buffer = await file.arrayBuffer();
       let offset = 0;
       const start = performance.now();
+
       while (offset < buffer.byteLength) {
-        while (dcRef.current.bufferedAmount > 8 * CHUNK_SIZE) await new Promise((r) => setTimeout(r, 25));
+        while (dcRef.current.bufferedAmount > 8 * CHUNK_SIZE) {
+          await new Promise((r) => setTimeout(r, 25));
+        }
+
         const chunk = buffer.slice(offset, offset + CHUNK_SIZE);
-        dcRef.current.send(chunk);
+        try {
+          dcRef.current.send(chunk);
+        } catch (error) {
+          throw new Error(`Failed to send chunk for ${file.name}: ${(error as Error).message}`);
+        }
+
         offset += CHUNK_SIZE;
         const elapsed = (performance.now() - start) / 1000;
         const speed = elapsed > 0 ? offset / elapsed : 0;
         const remaining = Math.max(buffer.byteLength - offset, 0);
         const etaSec = speed > 0 ? remaining / speed : 0;
-        onProgress(Math.min(100, (offset / buffer.byteLength) * 100), `${(speed / 1024 / 1024).toFixed(2)} MB/s`, `${etaSec.toFixed(1)}s`);
+        onProgress(
+          Math.min(100, (offset / buffer.byteLength) * 100),
+          `${(speed / 1024 / 1024).toFixed(2)} MB/s`,
+          `${etaSec.toFixed(1)}s`,
+        );
       }
+
       dcRef.current.send(JSON.stringify({ type: 'file-complete', name: file.name }));
     }
+
+    return all.length;
   };
 
   const createRoom = () => wsRef.current?.send(JSON.stringify({ type: 'create-room' }));

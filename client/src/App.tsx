@@ -11,6 +11,7 @@ export default function App() {
   const [speed, setSpeed] = useState('-');
   const [eta, setEta] = useState('-');
   const [tab, setTab] = useState<'home'|'history'|'settings'>('home');
+  const [transferError, setTransferError] = useState('');
   const imageInputRef = useRef<HTMLInputElement | null>(null);
 
   const signal = useSignal();
@@ -29,12 +30,19 @@ export default function App() {
 
   const onFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
-    await signal.sendFiles(e.target.files, (p, s, t) => {
-      setProgress(p);
-      setSpeed(s);
-      setEta(t);
-    });
-    store.setState({ transferHistory: [`${new Date().toLocaleString()} Sent ${e.target.files.length} file(s)`, ...store.transferHistory] });
+
+    setTransferError('');
+    try {
+      const sentCount = await signal.sendFiles(e.target.files, (p, s, t) => {
+        setProgress(p);
+        setSpeed(s);
+        setEta(t);
+      });
+      store.setState({ transferHistory: [`${new Date().toLocaleString()} Sent ${sentCount} file(s)`, ...store.transferHistory] });
+    } catch (error) {
+      setTransferError((error as Error).message || 'Transfer failed');
+    }
+
     e.target.value = '';
   };
 
@@ -110,6 +118,7 @@ export default function App() {
             </div>
             <p>Progress: {progress.toFixed(1)}%</p>
             <p>Speed: {speed} | ETA: {eta}</p>
+            {transferError ? <p style={{ color: '#f87171' }}>Transfer error: {transferError}</p> : null}
           </section>
         </>
       )}
