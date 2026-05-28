@@ -9,6 +9,11 @@ interface PeerPayload {
   userAgent: string;
 }
 
+interface IncomingFileMeta {
+  name: string;
+  size: number;
+}
+
 const CHUNK_SIZE = 128 * 1024;
 
 export function useSignal() {
@@ -19,6 +24,8 @@ export function useSignal() {
   const [transferRole, setTransferRole] = useState<TransferRole>('idle');
   const [counterpartyName, setCounterpartyName] = useState('');
   const selfDeviceIdRef = useRef('');
+  const incomingFileRef = useRef<IncomingFileMeta | null>(null);
+  const incomingChunksRef = useRef<ArrayBuffer[]>([]);
   const { setState, roomCode, deviceName } = useAppStore();
 
   useEffect(() => {
@@ -62,6 +69,72 @@ export function useSignal() {
     connect();
   }, [deviceName, setState]);
 
+  const saveIncomingFile = (name: string, chunks: ArrayBuffer[]) => {
+    const blob = new Blob(chunks);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    const latestHistory = useAppStore.getState().transferHistory;
+    setState({
+      transferHistory: [`${new Date().toLocaleString()} Received ${name}`, ...latestHistory],
+    });
+  };
+
+  const handleIncomingData = (payload: string | ArrayBuffer | Blob) => {
+    if (typeof payload === 'string') {
+      try {
+        const message = JSON.parse(payload) as { type?: string; name?: string; size?: number };
+        if (message.type === 'file-meta' && message.name && typeof message.size === 'number') {
+          incomingFileRef.current = { name: message.name, size: message.size };
+          incomingChunksRef.current = [];
+        }
+
+        if (message.type === 'file-complete') {
+          const currentIncoming = incomingFileRef.current;
+          if (currentIncoming && currentIncoming.name === message.name) {
+            saveIncomingFile(currentIncoming.name, incomingChunksRef.current);
+            incomingFileRef.current = null;
+            incomingChunksRef.current = [];
+          }
+        }
+      } catch {
+        // Ignore non-control string payloads
+      }
+      return;
+    }
+
+    if (!incomingFileRef.current) return;
+
+    if (payload instanceof Blob) {
+      payload.arrayBuffer().then((buffer) => {
+        incomingChunksRef.current.push(buffer);
+      });
+      return;
+    }
+
+    incomingChunksRef.current.push(payload);
+  };
+
+  const attachDataChannelHandlers = (channel: RTCDataChannel) => {
+    channel.binaryType = 'arraybuffer';
+    channel.onopen = () => setConnected(true);
+    channel.onmessage = (event) => handleIncomingData(event.data);
+    channel.onclose = () => {
+      setConnected(false);
+      setTransferRole('idle');
+      setCounterpartyName('');
+      incomingFileRef.current = null;
+      incomingChunksRef.current = [];
+    };
+  };
+
   const createPeerConnection = (remoteDeviceId: string) => {
     const pc = new RTCPeerConnection({
       iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }],
@@ -74,13 +147,7 @@ export function useSignal() {
 
     pc.ondatachannel = (event) => {
       dcRef.current = event.channel;
-      dcRef.current.binaryType = 'arraybuffer';
-      dcRef.current.onopen = () => setConnected(true);
-      dcRef.current.onclose = () => {
-        setConnected(false);
-        setTransferRole('idle');
-        setCounterpartyName('');
-      };
+      attachDataChannelHandlers(event.channel);
     };
 
     pcRef.current = pc;
@@ -95,14 +162,8 @@ export function useSignal() {
 
     const pc = createPeerConnection(remoteDeviceId);
     const dc = pc.createDataChannel('file-transfer', { ordered: true });
-    dc.binaryType = 'arraybuffer';
-    dc.onopen = () => setConnected(true);
-    dc.onclose = () => {
-      setConnected(false);
-      setTransferRole('idle');
-      setCounterpartyName('');
-    };
     dcRef.current = dc;
+    attachDataChannelHandlers(dc);
 
     setState({
       peers: latestPeers.map((peer) => (
