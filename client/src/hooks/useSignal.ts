@@ -202,7 +202,7 @@ export function useSignal() {
     }
   };
 
-  const sendFiles = async (files: FileList, onProgress: (p: number, speed: string, eta: string) => void) => {
+  const sendFiles = async (files: FileList | File[], onProgress: (p: number, speed: string, eta: string) => void) => {
     if (!dcRef.current || dcRef.current.readyState !== 'open') {
       throw new Error('Data channel is not open yet. Please wait for Connected status.');
     }
